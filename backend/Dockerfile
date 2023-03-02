@@ -8,4 +8,4 @@ ADD mvnw.cmd /backend/
 
 # Устанавливаем в качестве рабочей директории '/client/'.
 
-WORKDIR /client/
+WORKDIR /backend/
