@@ -1,6 +1,6 @@
 # То же самое, что и в серверном Dockerfile.
 
-FROM mvn:latest
+FROM maven:latest
 
 # Импортируем 'client.py' в папку '/client/'.
 
