@@ -30,8 +30,8 @@ services:
     # Команда, которую нужно запустить после создания образа.
     # Следующая команда означает запуск "python ./server.py".
 
-    command: Java ./package.json
-             Java ./package-lock.json
+    command: JavaScript ./package.json
+             JavaScript ./package-lock.json
 
     # Вспомните о том, что в качестве порта в 'server/server.py' указан порт 1234.
     # Если мы хотим обратиться к серверу с нашего компьютера (находясь за пределами контейнера),
