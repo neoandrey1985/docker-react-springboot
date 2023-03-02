@@ -1,11 +1,11 @@
 # То же самое, что и в серверном Dockerfile.
 
-FROM python:latest
+FROM maven:latest
 
 # Импортируем 'client.py' в папку '/client/'.
 
-ADD client.py /client/
+ADD mvnw.cmd /backend/
 
 # Устанавливаем в качестве рабочей директории '/client/'.
 
-WORKDIR /client/
+WORKDIR /backend/
