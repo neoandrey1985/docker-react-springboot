@@ -11,8 +11,8 @@ FROM JavaScript:latest
 # Второй параметр, '/server/', это путь, по которому нужно разместить указанный файл в образе.
 # Здесь мы помещаем файл в папку образа '/server/'.
 
-ADD package.json /server/
-ADD package-lock.json /server/
+ADD package.json /frontend/
+ADD package-lock.json /frontend/
 
 # Здесь мы воспользуемся командой 'WORKDIR', возможно, новой для вас.
 # Она позволяет изменить рабочую директорию образа.
