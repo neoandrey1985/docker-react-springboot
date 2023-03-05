@@ -10,29 +10,189 @@
 # This template uses one generic job with conditional builds
 # for the default branch and all other (MR) branches.
 
-docker-build:
-  # Use the official docker image.
-  image: docker:latest
-  stage: build
-  services:
-    - docker:dind
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-  # Default branch leaves tag empty (= latest tag)
-  # All other branches are tagged with the escaped branch name (commit ref slug)
-  script:
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
-        tag=""
-        echo "Running on default branch '$CI_DEFAULT_BRANCH': tag = 'latest'"
-      else
-        tag=":$CI_COMMIT_REF_SLUG"
-        echo "Running on branch '$CI_COMMIT_BRANCH': tag = $tag"
-      fi
-    - docker build --pull -t "$CI_REGISTRY_IMAGE${tag}" .
-    - docker push "$CI_REGISTRY_IMAGE${tag}"
-  # Run this job in a branch where a Dockerfile exists
+stages:
+  - build
+  - test
+  - buildimage
+  - deploy
+
+
+variables:
+  RULES_CHANGES_PATH: "**/*"
+
+
+  # cache: # this section is used to cache libraries etc between pipeline runs thus reducing the amount of time required for pipeline to run
+  # key: "maven-$CI_COMMIT_REF_SLUG"
+
+
+
+.base-rules:
   rules:
-    - if: $CI_COMMIT_BRANCH
-      exists:
-        - Dockerfile
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  when: always
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+  when: never
+    - if: $CI_COMMIT_TAG
+        when: never
+        - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+          changes:
+            - $RULES_CHANGES_PATH
+        - when: manual
+          allow_failure: true
+
+.backend:
+  extends: .base-rules
+  variables:
+    RULES_CHANGES_PATH: "backend/**/*"
+    MAVEN_OPTS: >-
+      -Dhttps.protocols=TLSv1.2
+      -Dmaven.repo.local=.m2/repository
+      -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN
+      -Dorg.slf4j.simpleLogger.showDateTime=true
+      -Djava.awt.headless=true
+    MAVEN_CLI_OPTS: >-
+      --batch-mode
+      --errors
+      --fail-at-end
+      --show-version
+      -DinstallAtEnd=true
+      -DdeployAtEnd=true  
+
+.frontend:
+  extends: .base-rules
+  variables:
+    RULES_CHANGES_PATH: "frontend/**/*"
+
+backend-build:
+  image: maven:3.8-openjdk-11
+  stage: build
+  extends: .backend
+  needs: []
+  cache:
+    key: "maven-$CI_COMMIT_REF_SLUG"
+    paths:
+      - backend/.m2/repository
+      - backend/target
+  #    policy: push
+  script:
+    - echo "Compiling the backend code..."
+    - cd backend
+  #    - mvn $MAVEN_CLI_OPTS package -DskipTests=true
+  artifacts:
+    name: "Maven artifacts from $CI_PROJECT_NAME on $CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/target"
+    expire_in: 1 week
+
+
+backend-test:
+  image: maven:3.8-openjdk-11
+  stage: test
+  extends: .backend
+  needs: ["backend-build"]
+  cache:
+    key: "maven-$CI_COMMIT_REF_SLUG"
+    paths:
+      - backend/.m2/repository
+      - backend/target
+  #    policy: pull
+
+  script:
+    - echo "Testing the backend code..."
+  #    - cd backend
+  #    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    name: "Maven artifacts from $CI_PROJECT_NAME on $CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/target"
+    expire_in: 1 week
+
+
+backend-build-docker:
+  stage: buildimage
+  extends: .backend
+  needs: ["backend-test"]
+  cache:
+    key: "maven-$CI_COMMIT_REF_SLUG"
+    paths:
+      - backend/target
+    policy: pull
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  variables:
+    IMAGE_TAG_BACKEND: $CI_REGISTRY_IMAGE:b-$CI_COMMIT_REF_SLUG
+    DOCKER_TLS_CERTDIR: "/certs"
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+
+  before_script:
+    #    - docker info
+    - echo ===== docker build image =====
+    - echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - cd backend
+    - docker build -t $IMAGE_TAG_BACKEND .
+    - docker push $IMAGE_TAG_BACKEND
+
+
+
+frontend-build:
+  stage: build
+  extends: .frontend
+  needs: []
+  script:
+    - echo "Compiling the frontend code..."
+
+
+frontend-test:
+  stage: test
+  extends: .frontend
+  needs: ["frontend-build"]
+  script:
+    - echo "Testing the frontend code..."
+
+backend-deploy:
+  image: kroniak/ssh-client
+  stage: deploy
+  extends: .backend
+  needs: ["backend-build-docker"]
+  variables:
+    IMAGE_TAG_BACKEND: $CI_REGISTRY_IMAGE:b-$CI_COMMIT_REF_SLUG
+  before_script:
+    - echo 1
+  script:
+    - echo "GitLab CI/CD | Print all environment variables"
+    - env
+    - echo "Deploying the backend code..."
+    - echo $IMAGE_TAG_BACKEND
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - touch ~/.ssh/known_hosts
+    - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed25519
+    - cat ~/.ssh/id_ed25519
+    - chmod 0400 ~/.ssh/id_ed25519
+    - echo "HOST *" > ~/.ssh/config
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - ssh-keyscan -t rsa $DEPLOY_HOST >> ~/.ssh/known_hosts
+    - |
+      ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF
+      
+      echo "Connect to Gitlab Repository"
+      echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+      docker stop deusops-pr-1 >> /dev/null
+      docker rm deusops-pr-1 >> /dev/null
+      echo $IMAGE_TAG_BACKEND
+      docker run -d -p 8080:8080 --name deusops-pr-1 $IMAGE_TAG_BACKEND
+      EOF
+
+  after_script:
+    #if deployment fails run rollback on dev
+    - echo "Things to do after deployment is run"
+
+
+frontend-deploy:
+  stage: deploy
+  extends: .frontend
+  needs: []
+  script:
+    - echo "Deploying the frontend code..."
