@@ -297,30 +297,30 @@ start-apps:
     - ssh-keyscan -t rsa $DEPLOY_HOST >> ~/.ssh/known_hosts
     - |
       ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF  
-      mkdir -p ~/deusops-ab1/traefik
-      mkdir -p ~/deusops-ab1/db
-      mkdir -p ~/deusops-ab1/backend
-      mkdir -p ~/deusops-ab1/frontend
+      mkdir -p ~/intensiv1/intensiv1/traefik
+      mkdir -p ~/intensiv1/intensiv1/db
+      mkdir -p ~/intensiv1/intensiv1/backend
+      mkdir -p ~/intensiv1/intensiv1/frontend
       exit
       EOF
 
-    - scp -i ~/.ssh/id_ed25519 ./traefik/traefik.toml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/traefik/
-    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-backend.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/backend/
+    - scp -i ~/.ssh/id_ed25519 ./traefik/traefik.toml $DEPLOY_USER@$DEPLOY_HOST:~/intensiv1/intensiv1/traefik/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-backend.yml $DEPLOY_USER@$DEPLOY_HOST:~/intensiv1/intensiv1/backend/
     - scp -i ~/.ssh/id_ed25519 ./backend/.env $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/backend/
-    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-mysql.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/db/
-    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-traefik.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/traefik/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-mysql.yml $DEPLOY_USER@$DEPLOY_HOST:~/intensiv1/intensiv1/db/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-traefik.yml $DEPLOY_USER@$DEPLOY_HOST:~/intensiv1/intensiv1/traefik/
 
     - |
       ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF
-      cd ~/deusops-ab1/traefik
+      cd ~/intensiv1/intensiv1/traefik
       mv docker-compose-traefik.yml docker-compose.yml
       docker-compose up -d
       cd ..
-      cd ~/deusops-ab1/db
+      cd ~/intensiv1/intensiv1/db
       mv docker-compose-mysql.yml docker-compose.yml
       docker-compose up -d
       cd ..
-      cd ~/deusops-ab1/backend
+      cd ~/intensiv1/intensiv1/backend
       mv docker-compose-backend.yml docker-compose.yml
       docker-compose up -d
       exit
