@@ -3,6 +3,7 @@ stages:
   - test
   - buildimage
   - deploy
+  - startapp
 
 
 variables:
@@ -125,19 +126,82 @@ backend-build-docker:
 
 
 frontend-build:
+  image: node:18-alpine
   stage: build
   extends: .frontend
   needs: []
+  cache:
+    key: "node-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/build"
+      - build
+      - node_modules/
+      - react-scripts/
   script:
     - echo "Compiling the frontend code..."
+    - cd frontend
+    - export NODE_OPTIONS=--openssl-legacy-provider
+    - npm install
+    - npm run build
+    - echo "Build successfully!"
+  artifacts:
+    name: "Node artifacts from $CI_PROJECT_NAME on $CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/build"
+      - build
+      - node_modules/
+      - react-scripts/
+    expire_in: 1 week
 
 
 frontend-test:
+  image: node:18-alpine
   stage: test
   extends: .frontend
   needs: ["frontend-build"]
+  cache:
+    key: "node-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/build"
+      - build
+      - node_modules/
+      - react-scripts/
   script:
     - echo "Testing the frontend code..."
+    - cd frontend
+    - export NODE_OPTIONS=--openssl-legacy-provider
+    - npm install
+    - npm run test
+    - echo "Test succesfully!"
+
+frontend-build-docker:
+  stage: buildimage
+  extends: .frontend
+  needs: ["frontend-test"]
+  cache:
+    key: "node-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "**/build"
+      - build
+      - node_modules/
+      - react-scripts/
+    policy: pull
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  variables:
+    IMAGE_TAG_FRONTEND: $CI_REGISTRY_IMAGE:f-$CI_COMMIT_REF_SLUG
+    DOCKER_TLS_CERTDIR: "/certs"
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+
+  before_script:
+    #    - docker info
+    - echo ===== docker build image =====
+    - echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - cd frontend
+    - docker build -t $IMAGE_TAG_FRONTEND .
+    - docker push $IMAGE_TAG_FRONTEND
 
 backend-deploy:
   image: kroniak/ssh-client
@@ -146,18 +210,17 @@ backend-deploy:
   needs: ["backend-build-docker"]
   variables:
     IMAGE_TAG_BACKEND: $CI_REGISTRY_IMAGE:b-$CI_COMMIT_REF_SLUG
+    IMAGE_TAG_FRONTEND: $CI_REGISTRY_IMAGE:f-$CI_COMMIT_REF_SLUG
   before_script:
     - echo 1
   script:
     - echo "GitLab CI/CD | Print all environment variables"
     - env
     - echo "Deploying the backend code..."
-    - echo $IMAGE_TAG_BACKEND
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
     - touch ~/.ssh/known_hosts
     - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed25519
-    - cat ~/.ssh/id_ed25519
     - chmod 0400 ~/.ssh/id_ed25519
     - echo "HOST *" > ~/.ssh/config
     - echo "StrictHostKeyChecking no" >> ~/.ssh/config
@@ -167,10 +230,10 @@ backend-deploy:
       
       echo "Connect to Gitlab Repository"
       echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-      docker stop deusops-pr-1 >> /dev/null
-      docker rm deusops-pr-1 >> /dev/null
-      echo $IMAGE_TAG_BACKEND
-      docker run -d -p 8080:8080 --name deusops-pr-1 $IMAGE_TAG_BACKEND
+      docker stop deusops_backend_1 >> /dev/null
+      docker rm deusops_backend_1 >> /dev/null
+      docker rmi registry.gitlab.com/anton.i.balashov/deusops-pr1-light:b-main
+      docker pull registry.gitlab.com/anton.i.balashov/deusops-pr1-light:b-main
       EOF
 
   after_script:
@@ -179,8 +242,90 @@ backend-deploy:
 
 
 frontend-deploy:
+  image: kroniak/ssh-client
   stage: deploy
   extends: .frontend
-  needs: []
+  needs: ["frontend-build-docker"]
+  variables:
+    IMAGE_TAG_FRONTEND: $CI_REGISTRY_IMAGE:f-$CI_COMMIT_REF_SLUG
+  before_script:
+    - echo 1
   script:
+    - echo "GitLab CI/CD | Print all environment variables"
+    - env
     - echo "Deploying the frontend code..."
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - touch ~/.ssh/known_hosts
+    - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed25519
+    - chmod 0400 ~/.ssh/id_ed25519
+    - echo "HOST *" > ~/.ssh/config
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - ssh-keyscan -t rsa $DEPLOY_HOST >> ~/.ssh/known_hosts
+    - |
+      ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF
+      
+      echo "Connect to Gitlab Repository"
+      echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+      docker stop deusops-pr-1-f >> /dev/null
+      docker rm deusops-pr-1-f >> /dev/null
+      docker rmi registry.gitlab.com/anton.i.balashov/deusops-pr1-light:f-main
+      docker pull registry.gitlab.com/anton.i.balashov/deusops-pr1-light:f-main
+      EOF
+
+start-apps:
+  image: kroniak/ssh-client
+  stage: startapp
+  extends: .backend
+  #  needs: ["frontend-deploy","backend-deploy"]
+  variables:
+    IMAGE_TAG_BACKEND: $CI_REGISTRY_IMAGE:b-$CI_COMMIT_REF_SLUG
+    IMAGE_TAG_FRONTEND: $CI_REGISTRY_IMAGE:f-$CI_COMMIT_REF_SLUG
+  before_script:
+    - echo 1
+  script:
+    - echo "GitLab CI/CD | Print all environment variables"
+    - env
+    - echo "Deploying the backend code..."
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - touch ~/.ssh/known_hosts
+    - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed25519
+    - chmod 0400 ~/.ssh/id_ed25519
+    - echo "HOST *" > ~/.ssh/config
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - ssh-keyscan -t rsa $DEPLOY_HOST >> ~/.ssh/known_hosts
+    - |
+      ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF  
+      mkdir -p ~/deusops-ab1/traefik
+      mkdir -p ~/deusops-ab1/db
+      mkdir -p ~/deusops-ab1/backend
+      mkdir -p ~/deusops-ab1/frontend
+      exit
+      EOF
+
+    - scp -i ~/.ssh/id_ed25519 ./traefik/traefik.toml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/traefik/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-backend.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/backend/
+    - scp -i ~/.ssh/id_ed25519 ./backend/.env $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/backend/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-mysql.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/db/
+    - scp -i ~/.ssh/id_ed25519 ./docker-compose/docker-compose-traefik.yml $DEPLOY_USER@$DEPLOY_HOST:~/deusops-ab1/traefik/
+
+    - |
+      ssh -i ~/.ssh/id_ed25519 $DEPLOY_USER@$DEPLOY_HOST <<EOF
+      cd ~/deusops-ab1/traefik
+      mv docker-compose-traefik.yml docker-compose.yml
+      docker-compose up -d
+      cd ..
+      cd ~/deusops-ab1/db
+      mv docker-compose-mysql.yml docker-compose.yml
+      docker-compose up -d
+      cd ..
+      cd ~/deusops-ab1/backend
+      mv docker-compose-backend.yml docker-compose.yml
+      docker-compose up -d
+      exit
+      EOF
+
+  after_script:
+    #if deployment fails run rollback on dev
+    - echo "Things to do after deployment is run"
