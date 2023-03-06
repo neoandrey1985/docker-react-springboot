@@ -232,8 +232,8 @@ backend-deploy:
       echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
       docker stop deusops_backend_1 >> /dev/null
       docker rm deusops_backend_1 >> /dev/null
-      docker rmi registry.gitlab.com/anton.i.balashov/deusops-pr1-light:b-main
-      docker pull registry.gitlab.com/anton.i.balashov/deusops-pr1-light:b-main
+      docker rmi registry.gitlab.com/intensiv1/intensiv1:b-main
+      docker pull registry.gitlab.com/intensiv1/intensiv1:b-main
       EOF
 
   after_script:
@@ -269,8 +269,8 @@ frontend-deploy:
       echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
       docker stop deusops-pr-1-f >> /dev/null
       docker rm deusops-pr-1-f >> /dev/null
-      docker rmi registry.gitlab.com/anton.i.balashov/deusops-pr1-light:f-main
-      docker pull registry.gitlab.com/anton.i.balashov/deusops-pr1-light:f-main
+      docker rmi registry.gitlab.com/intensiv1/intensiv1:f-main
+      docker pull registry.gitlab.com/intensiv1/intensiv1:f-main
       EOF
 
 start-apps:
