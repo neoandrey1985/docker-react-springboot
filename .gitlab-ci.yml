@@ -220,13 +220,13 @@ backend-deploy:
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
     - touch ~/.ssh/known_hosts
-    - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed02081985
-    - chmod 0400 ~/.ssh/id_ed02081985
+    - echo "$DEPLOY_TOKEN" > ~/.ssh/id_ed0208
+    - chmod 0400 ~/.ssh/id_ed0208
     - echo "HOST *" > ~/.ssh/config
     - echo "StrictHostKeyChecking no" >> ~/.ssh/config
     - ssh-keyscan -t rsa $DEPLOY_HOST >> ~/.ssh/known_hosts
     - |
-      ssh -i ~/.ssh/id_ed02081985 $DEPLOY_USER@$DEPLOY_HOST <<EOF
+      ssh -i ~/.ssh/id_ed0208 $DEPLOY_USER@$DEPLOY_HOST <<EOF
       
       echo "Connect to Gitlab Repository"
       echo $CI_REGISTRY_PASSWORD | docker login --username $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
